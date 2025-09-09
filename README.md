@@ -60,47 +60,58 @@ VoiceHub is a local-first speech toolkit that combines **Automatic Speech Recogn
 
 ## Install
 
-### Option A — Conda (recommended)
+> `requirements.txt` **intentionally does not include PyTorch**. Install PyTorch first (GPU or CPU), then install the rest of the dependencies.
 
+### 1) Create an environment
+
+**Conda (recommended)**
 ```bash
 # from repository root
 conda env create -f environment.yml
 conda activate voicehub
 ```
 
-
-### Option B — pip / venv
-
+**OR: venv (pip)**
 ```bash
 python -m venv .venv
-# Windows: .venv\\Scripts\\activate
+# Windows: .venv\Scriptsctivate
 source .venv/bin/activate
-pip install -r requirements.txt
 ```
 
-> If `pip install -r requirements.txt` already installed PyTorch successfully, you can skip the next section. If you hit errors with CUDA wheel variants (`+cu121`), install PyTorch explicitly using one of the commands below.
+### 2) Install PyTorch (choose ONE)
 
----
-
-## Choose your PyTorch (GPU or CPU)
-
-Install **one** of the following (pick what matches your machine). These commands come straight from the official PyTorch wheel indexes.
-
-### GPU (CUDA 12.1)
+**GPU (CUDA 12.1)**
 ```bash
 pip install --index-url https://download.pytorch.org/whl/cu121   torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121
 ```
 
-### CPU (safe default; works everywhere but slower)
+**CPU**
 ```bash
 pip install --index-url https://download.pytorch.org/whl/cpu   torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
 ```
 
 **Notes**
 - A GPU running cuda is recommend for a smoother experience (tested with cuda)
-- If you’re unsure, use the **CPU** command — the app will run (slower) but reliably.
+- With the **CPU** command, the app will run (slower) but reliably.
 - **Apple Silicon (M1/M2/M3)**: use the **CPU** wheels — PyTorch will use Metal (MPS) automatically.
 - If you previously installed a different Torch in your env, these commands will **reinstall** the specified version.
+
+**Quick check**
+
+If you want to check if pytorch was installed.
+```bash
+python - << 'PY'
+import torch
+print("torch:", torch.__version__, "cuda:", torch.cuda.is_available())
+PY
+```
+
+### 3) Install the remaining dependencies (pip only)
+
+```bash
+pip install -r requirements.txt
+```
+> Note: If the other dependencies were created using `conda env create -f environment.yml`, you can ignore this step.
 
 ---
 
