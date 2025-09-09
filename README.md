@@ -238,6 +238,8 @@ Update global defaults for:
 ├─ app.py                    # entrypoint; preferences path; Gradio launch; startup filters
 ├─ run.sh / run.bat          # convenience launchers
 ├─ requirements.txt / environment.yml
+├─ data/                     # some example samples
+├─ docs/                     # some example screenshots
 ├─ preferences/              # created on first run; stores config.json
 └─ src/voicehub/
    ├─ ui.py                  # UI, tabs, wiring, STOP buttons, mic streaming
