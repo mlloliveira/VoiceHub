@@ -8,9 +8,11 @@ VoiceHub is a local-first speech toolkit that combines **Automatic Speech Recogn
 
 - [Features](#features)
 - [Requirements](#requirements)
-- [Install & run](#install--run)
-- [How it works](#how-it-works)
+- [Install](#install)
+- [Choose your PyTorch (GPU or CPU)](#choose-your-pytorch-gpu-or-cpu)
+- [Run](#run)
 - [Runtime configuration](#runtime-configuration)
+- [How it works](#how-it-works)
 - [Configuration & preferences](#configuration--preferences)
 - [ASR](#asr)
 - [TTS](#tts)
@@ -56,7 +58,7 @@ VoiceHub is a local-first speech toolkit that combines **Automatic Speech Recogn
 
 ---
 
-## Install & run
+## Install
 
 ### Option A — Conda (recommended)
 
@@ -75,6 +77,32 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+> If `pip install -r requirements.txt` already installed PyTorch successfully, you can skip the next section. If you hit errors with CUDA wheel variants (`+cu121`), install PyTorch explicitly using one of the commands below.
+
+---
+
+## Choose your PyTorch (GPU or CPU)
+
+Install **one** of the following (pick what matches your machine). These commands come straight from the official PyTorch wheel indexes.
+
+### GPU (CUDA 12.1)
+```bash
+pip install --index-url https://download.pytorch.org/whl/cu121   torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121
+```
+
+### CPU (safe default; works everywhere but slower)
+```bash
+pip install --index-url https://download.pytorch.org/whl/cpu   torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
+```
+
+**Notes**
+- A GPU running cuda is recommend for a smoother experience (tested with cuda)
+- If you’re unsure, use the **CPU** command — the app will run (slower) but reliably.
+- **Apple Silicon (M1/M2/M3)**: use the **CPU** wheels — PyTorch will use Metal (MPS) automatically.
+- If you previously installed a different Torch in your env, these commands will **reinstall** the specified version.
+
+---
 
 ### Run
 
@@ -136,7 +164,6 @@ Set them temporarily in your shell, or permanently in your `run.sh` / `run.bat`.
 
 - `DEBUG_TOOLS` – `"1"` to show the **Debug** tab (default hidden)  
 
----
 
 ### How to set variables
 
