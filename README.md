@@ -20,7 +20,8 @@ VoiceHub is a local-first speech toolkit that combines **Automatic Speech Recogn
 - [Environment variables](#environment-variables)
 - [Troubleshooting](#troubleshooting)
 - [Roadmap / limitations](#roadmap--limitations)
-- [Contributing](#contributing)
+- [Screenshots](#screenshots)
+- [Sample audio](#sample-audio)
 - [License](#license)
 - [Quick start (TL;DR)](#quick-start-tldr)
 
@@ -302,17 +303,17 @@ Useful knobs when launching:
 
 ---
 
-## License
-
-This project is licensed under the [MIT License](https://mit-license.org/).
-
----
-
 ## Sample audio
 
 - Download: [sample_audio_1.wav](data/samples/sample_audio_1.wav)
 - Download: [sample_audio_2.wav](data/samples/sample_audio_2.wav)
 - Text:     [sample_text.txt](data/samples/sample_text.txt)
+
+---
+
+## License
+
+This project is licensed under the [MIT License](https://mit-license.org/).
 
 ---
 
