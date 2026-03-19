@@ -18,7 +18,7 @@ class UserSettings:
 
     # ---- XTTS (TTS) ----
     # Only the global chunk size lives here; per-synthesis speed/minutes are TTS-tab only.
-    xtts_max_chars_per_chunk: int = DEFAULT_MAX_CHARS_PER_CHUNK # keep < 250 for 'en' and < 203 for 'pt'
+    xtts_max_chars_per_chunk: int = DEFAULT_MAX_CHARS_PER_CHUNK # shared XTTS fixed-limit / threshold control
     xtts_max_minutes_default: float = DEFAULT_TTS_MAX_MINUTES
     xtts_dynamic_per_lang_caps: bool = True
 

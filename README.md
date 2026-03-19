@@ -54,7 +54,7 @@ VoiceHub is a local-first speech toolkit that combines **Automatic Speech Recogn
 
 - **Python** 3.10+
 - **GPU (optional)** for Faster-Whisper and XTTS-v2 acceleration. CPU should also works (not tested), just slower.
-- Dependencies are listed in **`requirements.txt`** and **`environment.yml`**.
+- Dependencies are listed in **`requirements.txt`** and **`environment.yml`**. The TTS chunker now depends on a library-backed sentence splitter, so update your environment after pulling the latest changes.
 
 ---
 
@@ -225,7 +225,7 @@ python app.py
 Update global defaults for:
 
 - **Whisper (ASR):** temperature, beam size, condition on previous text, microphone stream hard cap.
-- **XTTS (TTS):** dynamic per-language max chars per chunk, manual caps, and default max output minutes. **Reset** returns sliders/toggles to recommended defaults.
+- **XTTS (TTS):** language-aware per-language chunk sizing, a shared chunk cap/threshold control, and default max output minutes. **Reset** returns sliders/toggles to recommended defaults.
 - **Ollama (optional):** temperature, top-p, token cap, optional stop sequences.
 
 ---
@@ -246,7 +246,7 @@ Update global defaults for:
 
 - **Engine:** **Coqui XTTS-v2** (auto GPU if available, otherwise CPU). Speakers are discovered dynamically from the model.
 - **Language & voice:** choose TTS language, pick a discovered voice, adjust speed, and optionally provide a **reference WAV** to bias accent/style.
-- **Chunking:** we split on sentence boundaries and assemble max-length chunks; optional **Ollama pre-chunker** can refine punctuation & line breaks first. Progress is printed line-by-line; output audio is concatenated. **STOP** halts further chunk dispatch and posts a status.
+- **Chunking:** the TTS chunker was updated to a library-backed sentence splitter with the legacy in-repo chunker kept as fallback. Optional **Ollama pre-chunker** can still refine punctuation first, but VoiceHub now rejects refinements that change the original content/order. Progress is printed line-by-line; output audio is concatenated through a hardened join path that validates sample rates and smooths chunk boundaries. **STOP** halts further chunk dispatch and posts a status.
 - **Warnings:** if XTTS can’t move to GPU, we fall back to CPU and continue.
 
 ---

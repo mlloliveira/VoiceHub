@@ -4,7 +4,6 @@
 
 import gradio as gr
 from .user_settings import get_settings, update_settings, reset_settings
-from .config import DEFAULT_MAX_CHARS_PER_CHUNK  # reflect your config default in the UI
 
 def _save_cfg(
     # Whisper
@@ -70,23 +69,20 @@ def build_config_tab():
         with gr.Row():
             xtts_dynamic_caps = gr.Checkbox(
                 value=s.xtts_dynamic_per_lang_caps,
-                label="Dynamically handles max chars per chunk per language",
-                info="Recommended. Uses model-informed caps (e.g., en≈250, pt≈200, it≈210).",
+                label="Use language-aware chunk sizing (XTTS)",
+                info="When on, VoiceHub uses per-language caps and also applies the value below as a safety threshold. When off, the value below becomes a fixed manual chunk limit.",
             )
             xtts_max_chars_per_chunk = gr.Slider(
                 minimum=60, maximum=400, step=5, value=s.xtts_max_chars_per_chunk,
-                label=f"Max characters per chunk (XTTS) • Manual",
-                info="Upper bound per XTTS input string. Keep bellow limit to avoid truncation. Ignored when dynamic is on.",
-                interactive=not s.xtts_dynamic_per_lang_caps,   # Freeze when dynamic (xtts_dynamic_caps) is ON
+                label="Chunk size cap / threshold (XTTS)",
+                info="Shared XTTS control. Dynamic OFF: fixed max chars per chunk. Dynamic ON: conservative threshold applied on top of the language-aware cap.",
+                interactive=True,
             )
             xtts_max_minutes_default = gr.Slider(
-                minimum=0.5, maximum=30.0, step=0.5, value=s.xtts_max_minutes_default,
+                minimum=0.5, maximum=90.0, step=0.5, value=s.xtts_max_minutes_default,
                 label="Max audio output length (XTTS) in minutes",
                 info="Default cap for synthesized audio length; longer text will be truncated."
             )
-        def _toggle_slider(dyn: bool): # Reactively freeze/unfreeze the slider
-            return gr.update(interactive=not dyn)
-        xtts_dynamic_caps.change(_toggle_slider, [xtts_dynamic_caps], [xtts_max_chars_per_chunk])
 
         # ---- Ollama (LLM pre-chunker) ----
         gr.Markdown("**Ollama (pre-chunker)**")
@@ -165,7 +161,7 @@ def _reset_ui():
         gr.update(value=s["asr_stream_max_minutes"]),
         gr.update(value=s["xtts_dynamic_per_lang_caps"]),
         # also re-apply disabled/enabled state for the manual chars slider:
-        gr.update(value=s["xtts_max_chars_per_chunk"], interactive=not s["xtts_dynamic_per_lang_caps"]),
+        gr.update(value=s["xtts_max_chars_per_chunk"], interactive=True),
         gr.update(value=s["xtts_max_minutes_default"]),
         gr.update(value=s["ollama_temperature"]),
         gr.update(value=s["ollama_top_p"]),

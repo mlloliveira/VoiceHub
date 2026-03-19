@@ -1,5 +1,5 @@
 # src/voicehub/tts.py
-import re, tempfile, numpy as np, soundfile as sf, gradio as gr
+import tempfile, numpy as np, soundfile as sf, gradio as gr
 import sys
 
 from TTS.api import TTS
@@ -10,6 +10,8 @@ from .lang_detect import detect_tts_language
 # Import only Ollama knobs
 from .ollama_config import OLLAMA_ENABLE_DEFAULT, OLLAMA_MODEL_DEFAULT
 from .ollama_utils import has_ollama, refine_text_with_ollama
+from .chunking import chunk_text, choose_safe_refined_text
+from .audio_utils import concat_audio_segments
 
 # ===================== TTS: Coqui XTTS-v2 (dynamic speakers + optional cloning) =====================
 tts = TTS(TTS_MODEL_NAME) #If not stored yet in ~/.local/share/tts it downloads the model from Hugging Face
@@ -52,52 +54,8 @@ def refresh_speakers(language_display): #Refresh the list of speakers
     return gr.update(choices=choices, value=default, interactive=True)
 
 # ---- chunking helpers ----
-def _split_into_sentences(text: str): #Naive sentence splitter using a regex on punctuation such as . ! ? : ;
-    parts = re.split(r'(?<=[\.\!\?\:;\u3002])\s+', text.strip())
-    return [p.strip() for p in parts if p.strip()] # Returns clean non-empty sentences. This makes chunk assembly 'sentence-first' for better flow and fewer mid-thought breaks.
-
-def _chunk_by_length(sentences, max_len=DEFAULT_MAX_CHARS_PER_CHUNK): #Greedy chunker
-    """
-    Greedy chunker to keep each TTS input bellow desired chars size.
-    - Builds chunks by appending whole sentences while <= max_len.
-    - If a single sentence > max_len, word-wrap it into sub-chunks (<= max_len).
-    - Flush any pending 'cur' before splitting a long sentence
-      so the relative order is never changed.
-    """
-    chunks, cur = [], ""
-    for s in sentences:
-        s = s.strip()
-        if not s:
-            continue
-
-        if len(s) <= max_len:
-            # try to append to current chunk
-            if len(cur) + (1 if cur else 0) + len(s) <= max_len:
-                cur = f"{cur} {s}".strip() if cur else s
-            else:
-                if cur:
-                    chunks.append(cur)
-                cur = s
-        else:
-            if cur:
-                chunks.append(cur)
-                cur = ""
-
-            # word-wrap the long sentence
-            buf = ""
-            for w in s.split():
-                if len(buf) + (1 if buf else 0) + len(w) <= max_len:
-                    buf = f"{buf} {w}".strip() if buf else w
-                else:
-                    if buf:
-                        chunks.append(buf)
-                    buf = w
-            if buf:
-                chunks.append(buf)
-
-    if cur:
-        chunks.append(cur)
-    return chunks #Very long tokens (no spaces) can still exceed max_len; those become a single chunk equal to that token, but XTTS will still speak it; it just may be awkward.
+def _chunk_backend_label(backend: str) -> str:
+    return backend or "unknown"
 
 def _tts_chunk(text_chunk, lang, speaker_name=None, ref_wav=None, speed=1.0): #Synthesizes ONE chunk with XTTS
     if ref_wav: #Cloning: if ref_wav is provided -> pass speaker_wav=[ref_wav].
@@ -134,9 +92,10 @@ def preprocess_to_chunks(
     use_ollama: bool,
     ollama_model: str,
     max_chars: int,
+    lang_code: str = "xx",
 ):
     """
-    Raw text → (optional Ollama refine) → naive sentence split → greedy chunking (<= max_chars).
+    Raw text → (optional Ollama refine) → library chunker (exact-text preserving).
     Returns: refined_text, sentences_list, chunks_list
     """
     text = (text or "").strip()
@@ -153,12 +112,15 @@ def preprocess_to_chunks(
                     text, max_chars=int(max_chars), model=model, options=_build_ollama_options_from_settings()
                 )
                 if refined_out:
-                    refined = refined_out
+                    refined, accepted = choose_safe_refined_text(text, refined_out)
+                    if not accepted:
+                        print("[TTS] Ollama refine changed content/order; falling back to original text.")
             except Exception as e:
                 print(f"[TTS] Ollama refine failed: {e}. Keeping original text.")
 
-    sents = _split_into_sentences(refined)
-    chunks = _chunk_by_length(sents, max_len=int(max_chars))
+    sents, chunks, backend = chunk_text(refined, max_len=int(max_chars), lang_code=lang_code or "xx")
+    if DEBUG_TOOLS:
+        print(f"[TTS] chunk_backend={_chunk_backend_label(backend)} | chunks={len(chunks)}")
     return refined, sents, chunks
 
 ### Create conditions and functions to force a stop:
@@ -245,6 +207,7 @@ def synthesize_tts(
         use_ollama=bool(use_ollama),
         ollama_model=ollama_model,
         max_chars=seg_chars,
+        lang_code=lang or "en",
     )
 
     total_chunks = len(chunks)
@@ -264,7 +227,7 @@ def synthesize_tts(
             raise RuntimeError("No built-in speakers found. Upload a reference WAV to clone a voice.")
 
     # --- 5) Synthesis loop with hard cap & epsilon tolerance ---
-    wavs, sample_rate = [], None
+    wavs, sample_rates = [], []
     total_s = 0.0
     truncated = False
     truncated_mid_chunk = False
@@ -286,9 +249,11 @@ def synthesize_tts(
         _console_progress(i, total_chunks, prefix="TTS")  
 
         # synthesize one chunk (cloning if ref_wav else use speaker_name)
-        w, sr = _tts_chunk(ch, lang, speaker_name=speaker_name, ref_wav=ref_wav, speed=speed)
-        if sample_rate is None:
-            sample_rate = sr
+        speak_text = ch.strip()
+        if not speak_text:
+            continue
+        w, sr = _tts_chunk(speak_text, lang, speaker_name=speaker_name, ref_wav=ref_wav, speed=speed)
+        sample_rates.append(sr)
 
         dur = len(w) / sr
         remain = max_seconds - total_s
@@ -334,9 +299,9 @@ def synthesize_tts(
             return None, "⛔️ Stopped by user before any audio could be synthesized."
         return None, f"⚠️ Output capped at {used_limit_min:.1f} min; nothing could be synthesized."
 
-    final = np.concatenate(wavs) if len(wavs) > 1 else wavs[0]
+    final, output_sr = concat_audio_segments(wavs, sample_rates)
     out_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
-    sf.write(out_path, final, sample_rate or 24000)
+    sf.write(out_path, final, output_sr or 24000)
 
     # build warning (include how many chunks we actually generated)
     warn = ""
@@ -372,8 +337,7 @@ def inspect_chunking(text: str, max_chars: int | None = None):
         return [], [], "Provide some text above."
 
     max_len = int(max_chars) if max_chars else DEFAULT_MAX_CHARS_PER_CHUNK
-    sents = _split_into_sentences(text)
-    chunks = _chunk_by_length(sents, max_len=max_len)
+    sents, chunks, backend = chunk_text(text, max_len=max_len, lang_code="xx")
 
     sent_rows = [[idx, len(s), s] for idx, s in enumerate(sents)]
     chunk_rows = [[idx, len(c), c] for idx, c in enumerate(chunks)]
@@ -383,14 +347,11 @@ def inspect_chunking(text: str, max_chars: int | None = None):
         f"**Sentences:** {len(sents)}\n\n"
         f"**Chunks (max {max_len} chars):** {len(chunks)}  •  "
         f"**Total chars across chunks:** {total_chars}\n\n"
-        "Chunks are built greedily from full sentences, word-wrapping only when a single sentence exceeds the max length."
+        f"**Chunk backend:** {_chunk_backend_label(backend)}"
     )
     return sent_rows, chunk_rows, summary
 
 # --- developer: end-to-end inspection helper (raw -> refined -> sentences -> chunks) ---
-from .ollama_config import OLLAMA_MAX_SEG_CHARS, OLLAMA_MODEL_DEFAULT  # top of file with other imports
-from .ollama_utils import has_ollama, refine_text_with_ollama           # already used by synthesize_tts
-
 def inspect_full_pipeline(
     text: str,
     max_chars: int | None = None,
@@ -418,7 +379,7 @@ def inspect_full_pipeline(
 
     # use same seg length default as TTS unless overridden by the slider
     s = get_settings()
-    seg_chars = effective_max_chars(
+    seg_chars = int(max_chars) if max_chars else effective_max_chars(
         lang_code=dbg_lang,
         user_cap=int(getattr(s, "xtts_max_chars_per_chunk", DEFAULT_MAX_CHARS_PER_CHUNK)),
         dynamic=bool(getattr(s, "xtts_dynamic_per_lang_caps", True)),
@@ -430,6 +391,7 @@ def inspect_full_pipeline(
         use_ollama=bool(use_ollama),
         ollama_model=ollama_model,
         max_chars=seg_chars,
+        lang_code=dbg_lang,
     )
 
     sent_rows  = [[i, len(s), s] for i, s in enumerate(sents)]

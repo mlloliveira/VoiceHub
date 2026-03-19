@@ -75,12 +75,20 @@ def dynamic_cap_for_lang(code: str) -> int:
 
 def effective_max_chars(lang_code: str, user_cap: int, dynamic: bool) -> int:
     """
-    If dynamic=True → use the language-specific bucketed cap.
-    If dynamic=False → use the user slider as-is.
+    Shared XTTS chunk-size control.
+
+    If dynamic=False:
+        use the user value as the fixed per-chunk limit.
+
+    If dynamic=True:
+        use the language-aware cap, but also honor the user value as a
+        conservative threshold. In practice this means the effective limit is
+        the smaller of the dynamic cap and the user-controlled threshold.
     """
+    manual_cap = max(1, int(user_cap))
     if dynamic:
-        return dynamic_cap_for_lang(lang_code)
-    return int(user_cap)
+        return min(dynamic_cap_for_lang(lang_code), manual_cap)
+    return manual_cap
 
 # ---- ASR languages (dynamic; includes "auto") ----
 _ASR_CODES = _parse_codes(os.getenv("ASR_LANGS"), "auto,en,pt,ru")
@@ -107,8 +115,8 @@ for code in _TTS_CODES:
 
 # TTS knobs
 TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
-DEFAULT_MAX_CHARS_PER_CHUNK = int(os.getenv("TTS_MAX_CHARS", "210"))  # keep < 250 for 'en' and < 203 for 'pt'
-DEFAULT_TTS_MAX_MINUTES = 5.0
+DEFAULT_MAX_CHARS_PER_CHUNK = int(os.getenv("TTS_MAX_CHARS", "200"))  # shared XTTS fixed-limit / threshold default
+DEFAULT_TTS_MAX_MINUTES = 15.0
 DEFAULT_TTS_SPEED = 1.0
 
 # Dev-only UI (hidden unless you opt in)
