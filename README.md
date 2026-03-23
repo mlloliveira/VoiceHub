@@ -1,5 +1,5 @@
 
-# VoiceHub — Multilingual ASR + TTS (Gradio)
+# VoiceHub 0.2.0 — Multilingual ASR + TTS (Gradio)
 
   
 
