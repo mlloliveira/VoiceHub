@@ -1,0 +1,2 @@
+conda activate voicehub2
+cd C:\Users\Marcio\Documents\Python AI\VoiceHub_0_2_0

@@ -44,8 +44,8 @@ SYS_PATH_SRC = str(ROOT / "src")
 if SYS_PATH_SRC not in sys.path:
     sys.path.insert(0, SYS_PATH_SRC)
 
-# Put preferences inside the app directory by default
-os.environ.setdefault("VOICEHUB_PREFS_DIR", str(ROOT / "preferences"))
+# Preferences default to the user profile via src.voicehub.prefs.
+# Set VOICEHUB_PREFS_DIR explicitly if you want a portable/custom location.
 
 # Keep localhost clean (corporate proxies etc.)
 os.environ.setdefault("NO_PROXY", "127.0.0.1,localhost,::1")

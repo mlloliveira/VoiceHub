@@ -42,8 +42,8 @@ def _asr_translate_choices():
     # Keep only real languages (i.e., code is not None)
     return [label for label in ASR_LANG_DISPLAY if ASR_LANG_MAP.get(label)]
 
-#Include Auto-Detect in the TTS Language
-tts_lang_choices = ["Auto-detect"] + TTS_LANG_DISPLAY
+# TTS choices already include Auto-detect in config.py
+tts_lang_choices = TTS_LANG_DISPLAY
 
 #Build the App UI:
 def build_app():
@@ -60,7 +60,6 @@ def build_app():
                         audio_in = gr.Audio(
                             sources=["upload"], type="filepath",  # Do ["upload","microphone"] to add microphone here too. But it caps within 30s
                             format="wav",
-                            max_length=600,  # allow up to 10 min mic recordings
                             label="Upload audio",
                         )
                     with gr.Tab("🎤 Microphone"): 
@@ -84,7 +83,7 @@ def build_app():
                         asr_meta = gr.Markdown("")
                 with gr.Row():
                     # add show_copy_button for convenience
-                    out_text = gr.Textbox(label="Transcript", lines=6, show_copy_button=True)
+                    out_text = gr.Textbox(label="Transcript", lines=6)
                     #Advanced Button for AI Translation using Ollama
                 with gr.Row():
                     with gr.Accordion("Advanced", open=False):
@@ -111,7 +110,7 @@ def build_app():
                         with gr.Row():
                             asr_translate_btn = gr.Button("Translate", variant="primary")
                         with gr.Row():
-                            asr_translation = gr.Textbox(label="Translation", lines=6, show_copy_button=True)
+                            asr_translation = gr.Textbox(label="Translation", lines=6)
                         asr_ollama_status = gr.Markdown("")
                     # wire up model refresh + test
                     asr_refresh_models_btn.click(
@@ -172,8 +171,8 @@ def build_app():
                     in_text = gr.Textbox(label="Text", placeholder="Type something…", lines=25)
                     with gr.Column():
                         tts_lang_dd = gr.Dropdown(tts_lang_choices, value=tts_lang_choices[0], label="TTS Language")
-                        init_choices, init_default = make_speaker_choices(TTS_LANG_DISPLAY[0])
-                        tts_speaker_dd = gr.Dropdown(init_choices, value=init_default, label="Voice (discovered)", allow_custom_value=False)
+                        init_choices, init_default = make_speaker_choices(tts_lang_choices[0], s.tts_default_family)
+                        tts_speaker_dd = gr.Dropdown(init_choices, value=init_default, label="Voice (backend-aware)", allow_custom_value=False)
                         tts_speed = gr.Slider(0.5, 2.0, value=DEFAULT_TTS_SPEED, step=0.05, label="Speed")
                         # Optional cloning: upload a reference WAV to enforce accent/style
                         ref_wav = gr.Audio(sources=["upload"], type="filepath", label="(Optional) Reference voice WAV")
@@ -187,6 +186,7 @@ def build_app():
                     with gr.Column():
                         tts_audio = gr.Audio(label="TTS Output", autoplay=True, type="filepath")
                     with gr.Column():
+                        qwen_prompt_box = gr.Textbox(label="Qwen voice style prompt", placeholder="Describe how you want the voice to sound. Qwen only.", lines=2, visible=(s.tts_default_family == "Qwen"))
                         with gr.Accordion("Advanced", open=False):
                             # ---- Optional Ollama pre-chunker (dev/advanced) ----
                             use_ollama = gr.Checkbox(value=OLLAMA_ENABLE_DEFAULT, label="Use Ollama pre-chunker (optional)")
@@ -230,7 +230,7 @@ def build_app():
                 # Wire Actions:
                 go_tts.click(
                     synthesize_tts,
-                    [in_text, tts_lang_dd, tts_speaker_dd, tts_speed, ref_wav, use_ollama, ollama_model],
+                    [in_text, tts_lang_dd, tts_speaker_dd, tts_speed, ref_wav, qwen_prompt_box, use_ollama, ollama_model],
                     [tts_audio, tts_warn_md],
                     concurrency_limit=2,
                 )
@@ -242,10 +242,12 @@ def build_app():
                 )
             # -------- CONFIG TAB --------
             with gr.Tab("⚙️ Config"):
-                build_config_tab()
-                # -------- LOG TAB --------
-                from .log_panel import build_log_tab
-                build_log_tab(demo)
+                cfg_handles = build_config_tab(qwen_prompt_box=qwen_prompt_box)
+
+            # -------- LOG TAB --------
+            from .log_panel import build_log_tab
+            build_log_tab(demo)
+
             # -------- DEV-ONLY: Debug (hidden unless DEBUG_TOOLS=1) --------
             if DEBUG_TOOLS:
                 build_debug_tab()

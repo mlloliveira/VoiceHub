@@ -1,4 +1,4 @@
-# VoiceHub 0.2.x XTTS-only / lightweight install
+# VoiceHub 0.2.x full install (XTTS + optional Qwen)
 # Install PyTorch + torchaudio first (see README), then install this file.
 
 soundfile==0.13.1
@@ -9,6 +9,8 @@ faster-whisper==1.2.1
 openai-whisper==20250625
 
 coqui-tts==0.27.0
+qwen-tts==0.1.1
+sox==1.5.0
 langid==1.1.6
 
 gradio==4.44.1

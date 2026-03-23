@@ -4,7 +4,8 @@
 import json, re, urllib.request
 from typing import Optional, Tuple, List, Dict
 
-from .ollama_config import (OLLAMA_HOST, OLLAMA_TIMEOUT, OLLAMA_PRECHUNK_PROMPT, OLLAMA_MAX_SEG_CHARS, OLLAMA_TRANSLATE_PROMPT
+from .ollama_config import (
+    OLLAMA_HOST, OLLAMA_TIMEOUT, OLLAMA_PRECHUNK_PROMPT_XTTS, OLLAMA_PRECHUNK_PROMPT_QWEN, OLLAMA_MAX_SEG_CHARS, OLLAMA_TRANSLATE_PROMPT
 )
 
 # Try optional Python client; if missing, we fall back to raw HTTP
@@ -49,7 +50,7 @@ def _generate(prompt: str, model: str, options: dict | None = None) -> str:
     )
     return (out.get("response") or "").strip() if out else ""
 
-def refine_text_with_ollama(raw_text: str, max_chars: int | None, model: str, options: dict | None = None) -> str:
+def refine_text_with_ollama(raw_text: str, max_chars: int | None, model: str, options: dict | None = None, prompt_mode: str = "xtts") -> str:
     """
     Pre-process text with Ollama to produce better, punctuation-aware segments (one per line).
     We DO NOT replace your splitter/greedy chunker; this step just improves the input text.
@@ -58,7 +59,8 @@ def refine_text_with_ollama(raw_text: str, max_chars: int | None, model: str, op
     if not raw_text:
         return ""
     mc = int(max_chars) if max_chars else OLLAMA_MAX_SEG_CHARS
-    prompt = OLLAMA_PRECHUNK_PROMPT.format(max_chars=mc) + raw_text + "\n\nOutput text:\n"
+    template = OLLAMA_PRECHUNK_PROMPT_QWEN if str(prompt_mode).lower() == "qwen" else OLLAMA_PRECHUNK_PROMPT_XTTS
+    prompt = template.format(max_chars=mc) + raw_text + "\n\nOutput text:\n"
     resp = _generate(prompt, model=model, options=options)
     if not resp:
         return ""

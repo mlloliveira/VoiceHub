@@ -59,11 +59,13 @@ def build_log_tab(demo: gr.Blocks):
     _install_tee()
     with gr.Tab("🖥️ Log Panel"):
         gr.Markdown("### 💻 In-app Log Panel")
-        log_box = gr.Textbox(label="Logs", lines=20, show_copy_button=True)
+        log_box = gr.Textbox(label="Logs", lines=20)
         clear_btn = gr.Button("Clear Logs")
         clear_btn.click(clear_logs, outputs=log_box, show_progress="hidden")
 
         # Auto-refresh every 0.5s
-        demo.load(fn=get_logs, inputs=None, outputs=log_box, every=0.5)
+        refresh_timer = gr.Timer(value=0.5, active=True)
+        refresh_timer.tick(fn=get_logs, inputs=None, outputs=log_box)
+        demo.load(fn=get_logs, inputs=None, outputs=log_box)
 
     return {"log_box": log_box}

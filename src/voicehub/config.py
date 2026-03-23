@@ -1,14 +1,16 @@
 # src/voicehub/config.py
 import os
 
-# ASR knobs (kept from your comments)
-ASR_MODEL_NAME = os.getenv("ASR_MODEL", "large-v3")  # Defaults to Whisper large-v3.
-ASR_COMPUTE = "int8_float16" if os.getenv("ASR_INT8", "0") == "1" else "float16"  # Compute is FP16 by default; int8_float16 uses 8-bit weights + FP16 activations to reduce VRAM and boost throughput (CTranslate2 feature)
+VOICEHUB_VERSION = "0.2.0"
+
+# ASR knobs
+ASR_MODEL_NAME = os.getenv("ASR_MODEL", "turbo")
+ASR_COMPUTE = "int8_float16" if os.getenv("ASR_INT8", "0") == "1" else "float16"
 
 BACKENDS = ["Faster-Whisper (GPU, recommended)", "OpenAI Whisper (GPU)"]
 BACKEND_MAP = {"Faster-Whisper (GPU, recommended)": "fw", "OpenAI Whisper (GPU)": "ow"}
 
-# Languages supported by XTTS-v2 (17 total)
+# Languages supported by XTTS-v2
 _LANG_LABELS = {
     "en": "English",
     "es": "Español",
@@ -29,21 +31,35 @@ _LANG_LABELS = {
     "hi": "हिन्दी",
 }
 
-def _parse_codes(var_value: str, default_csv: str):
-    raw = (var_value or default_csv).split(",")
-    return [c.strip().lower() for c in raw if c.strip()]
+# Qwen supported languages
+QWEN_SUPPORTED_CODES = {"zh-cn", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"}
+QWEN_LANGUAGE_NAME_MAP = {
+    "zh-cn": "Chinese",
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "de": "German",
+    "fr": "French",
+    "ru": "Russian",
+    "pt": "Portuguese",
+    "es": "Spanish",
+    "it": "Italian",
+}
 
-
-# --- XTTS per-language character caps (model-informed limits) ---
-
+# XTTS per-language character caps
 PER_LANG_CHAR_CAPS = {
     "en": 250, "de": 253, "fr": 273, "es": 239, "it": 213, "pt": 203,
     "pl": 224, "tr": 226, "ru": 182, "nl": 251, "cs": 186, "ar": 166,
     "zh": 82,  "ja": 71,  "hu": 224, "ko": 95, "hi": 250,
 }
 
+
+def _parse_codes(var_value: str, default_csv: str):
+    raw = (var_value or default_csv).split(",")
+    return [c.strip().lower() for c in raw if c.strip()]
+
+
 def _base_lang(code: str) -> str:
-    # 'zh-cn' -> 'zh', 'pt' -> 'pt'
     if not code:
         return "en"
     c = code.lower()
@@ -51,12 +67,8 @@ def _base_lang(code: str) -> str:
         return "zh"
     return c.split("-")[0]
 
+
 def _bucket_down_10(n: int, floor_min: int = 50) -> int:
-    """
-    Bucket to the next lower multiple of 10.
-    If already a multiple of 10, step down one bucket (e.g., 250 -> 240).
-    Enforce a minimal sane floor to avoid tiny values (default 50).
-    """
     n = int(n)
     if n <= floor_min:
         return floor_min
@@ -64,36 +76,24 @@ def _bucket_down_10(n: int, floor_min: int = 50) -> int:
     bucket = (q - 1) * 10 if r == 0 else q * 10
     return max(floor_min, bucket)
 
+
 def dynamic_cap_for_lang(code: str) -> int:
-    """
-    Language-aware cap with 'next lower multiple of 10' bucketing.
-    Examples: it(213)->210, tr(226)->220, en(250)->240, fr(273)->270, zh(82)->80, ja(71)->70.
-    """
     base = _base_lang(code)
     cap = PER_LANG_CHAR_CAPS.get(base, 250)
     return _bucket_down_10(cap)
 
+
 def effective_max_chars(lang_code: str, user_cap: int, dynamic: bool) -> int:
-    """
-    Shared XTTS chunk-size control.
-
-    If dynamic=False:
-        use the user value as the fixed per-chunk limit.
-
-    If dynamic=True:
-        use the language-aware cap, but also honor the user value as a
-        conservative threshold. In practice this means the effective limit is
-        the smaller of the dynamic cap and the user-controlled threshold.
-    """
     manual_cap = max(1, int(user_cap))
     if dynamic:
         return min(dynamic_cap_for_lang(lang_code), manual_cap)
     return manual_cap
 
-# ---- ASR languages (dynamic; includes "auto") ----
+
+# ---- ASR languages ----
 _ASR_CODES = _parse_codes(os.getenv("ASR_LANGS"), "auto,en,pt,ru")
 ASR_LANG_DISPLAY = []
-ASR_LANG_MAP = {}  # display -> code (None for auto)
+ASR_LANG_MAP = {}
 for code in _ASR_CODES:
     if code == "auto":
         label = "Auto-detect"
@@ -104,25 +104,56 @@ for code in _ASR_CODES:
         ASR_LANG_DISPLAY.append(label)
         ASR_LANG_MAP[label] = code
 
-# ---- TTS languages (dynamic) ----
-_TTS_CODES = _parse_codes(os.getenv("TTS_LANGS"), "en,pt")
-TTS_LANG_DISPLAY = []
-TTS_LANG_MAP = {}  # display -> code
+# ---- TTS languages ----
+_TTS_CODES = _parse_codes(os.getenv("TTS_LANGS"), "en,pt,es,fr,de,it,ru,ja,ko,zh-cn,ar,nl,pl,tr,cs,hu,hi")
+TTS_LANG_DISPLAY = ["Auto-detect"]
+TTS_LANG_MAP = {"Auto-detect": None}
 for code in _TTS_CODES:
     label = _LANG_LABELS.get(code, code)
-    TTS_LANG_DISPLAY.append(label)
-    TTS_LANG_MAP[label] = code
+    if label not in TTS_LANG_MAP:
+        TTS_LANG_DISPLAY.append(label)
+        TTS_LANG_MAP[label] = code
 
-# TTS knobs
-TTS_MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
-DEFAULT_MAX_CHARS_PER_CHUNK = int(os.getenv("TTS_MAX_CHARS", "200"))  # shared XTTS fixed-limit / threshold default
-DEFAULT_TTS_MAX_MINUTES = 15.0
+# TTS knobs / model ids
+TTS_MODEL_NAME = os.getenv("TTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2")
+QWEN_MODEL_SIZE_OPTIONS = ("1.7B", "0.6B")
+QWEN_DEFAULT_MODEL_SIZE = os.getenv("QWEN_MODEL_SIZE", "1.7B")
+QWEN_CUSTOM_MODEL_NAME = os.getenv("QWEN_CUSTOM_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
+QWEN_CLONE_MODEL_NAME = os.getenv("QWEN_CLONE_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
+QWEN_TOKENIZER_MODEL_NAME = os.getenv("QWEN_TOKENIZER_MODEL", "Qwen/Qwen3-TTS-Tokenizer-12Hz")
+
+def qwen_model_names_for_size(size: str | None):
+    normalized = (size or QWEN_DEFAULT_MODEL_SIZE or "1.7B").strip()
+    if normalized not in QWEN_MODEL_SIZE_OPTIONS:
+        normalized = "1.7B"
+    return {
+        "size": normalized,
+        "custom": f"Qwen/Qwen3-TTS-12Hz-{normalized}-CustomVoice",
+        "clone": f"Qwen/Qwen3-TTS-12Hz-{normalized}-Base",
+        "tokenizer": QWEN_TOKENIZER_MODEL_NAME,
+    }
+
+DEFAULT_MAX_CHARS_PER_CHUNK = int(os.getenv("TTS_MAX_CHARS", "200"))
+DEFAULT_QWEN_CHUNK_SIZE = int(os.getenv("QWEN_TTS_MAX_CHARS", "512"))
+DEFAULT_QWEN_MAX_NEW_TOKENS = int(os.getenv("QWEN_MAX_NEW_TOKENS", "1024"))
+DEFAULT_TTS_MAX_MINUTES = 10.0
 DEFAULT_TTS_SPEED = 1.0
+DEFAULT_XTTS_CLONE_REF_SECONDS = float(os.getenv("XTTS_CLONE_REF_SECONDS", "300"))
+DEFAULT_QWEN_CLONE_REF_SECONDS = float(os.getenv("QWEN_CLONE_REF_SECONDS", "50"))
+CLONE_REF_SECONDS_MIN = 5
+CLONE_REF_SECONDS_MAX = 600
+XTTS_CHUNK_MIN = 60
+XTTS_CHUNK_MAX = 400
+QWEN_CHUNK_MIN = 120
+QWEN_CHUNK_MAX = 2048
 
-# Dev-only UI (hidden unless you opt in)
+# Dev-only UI
+
 def _env_flag(name: str, default: bool = False) -> bool:
     val = os.getenv(name)
     if val is None:
         return default
     return val.strip().lower() in {"1", "true", "yes", "on"}
-DEBUG_TOOLS = _env_flag("DEBUG_TOOLS", default=False) # Dev-only
+
+
+DEBUG_TOOLS = _env_flag("DEBUG_TOOLS", default=False)

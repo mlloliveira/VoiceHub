@@ -1,6 +1,6 @@
 # src/voicehub/asr.py
+import os
 import tempfile
-import os, tempfile
 import numpy as np
 import soundfile as sf
 
@@ -12,9 +12,15 @@ from .ollama_utils import has_ollama, translate_text_with_ollama
 from .ollama_config import OLLAMA_MODEL_DEFAULT
 
 # ===================== ASR (Whisper via faster-whisper / optional openai-whisper) =====================
-from faster_whisper import WhisperModel
+FW_AVAILABLE = True
+WhisperModel = None
+try:
+    from faster_whisper import WhisperModel
+except Exception:
+    FW_AVAILABLE = False
 
 OWHISPER_AVAILABLE = True
+owhisp = None
 try:
     import whisper as owhisp
 except Exception:
@@ -28,13 +34,37 @@ from .config import (
 _fw_model = None 
 _ow_model = None
 
+
+def _torch_cuda_available() -> bool:
+    try:
+        import torch
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+def _fw_runtime_args():
+    if _torch_cuda_available():
+        return {"device": "cuda", "compute_type": ASR_COMPUTE}
+    return {"device": "cpu", "compute_type": os.getenv("ASR_CPU_COMPUTE", "float32")}
+
+
+def _ow_device() -> str:
+    return "cuda" if _torch_cuda_available() else "cpu"
+
 #Why two backends?
 #faster-whisper is much faster and lighter for deployment (CTranslate2). openai-whisper (the original PyTorch impl) is useful for parity checks and debugging.
 
 def get_fw_model(): #faster-whisper (CTranslate2) on CUDA with your chosen compute type.
     global _fw_model
     if _fw_model is None:
-        _fw_model = WhisperModel(ASR_MODEL_NAME, device="cuda", compute_type=ASR_COMPUTE)
+        if not FW_AVAILABLE or WhisperModel is None:
+            raise RuntimeError("faster-whisper is not installed in this env.")
+        runtime = _fw_runtime_args()
+        print(f"⏳ Loading faster-whisper model: {ASR_MODEL_NAME} on {runtime.get('device', 'cpu')}")
+        print("ℹ️ If this is the first time this model is used here, it may need to download files and can take a while.")
+        _fw_model = WhisperModel(ASR_MODEL_NAME, **runtime)
+        print("✅ faster-whisper model loaded.")
     return _fw_model
 
 def get_ow_model(): #openai-whisper (PyTorch) as a secondary backend, in case you want to compare or debug.
@@ -42,7 +72,11 @@ def get_ow_model(): #openai-whisper (PyTorch) as a secondary backend, in case yo
     if _ow_model is None:
         if not OWHISPER_AVAILABLE:
             raise RuntimeError("openai-whisper is not installed in this env.")
-        _ow_model = owhisp.load_model(ASR_MODEL_NAME, device="cuda")
+        device = _ow_device()
+        print(f"⏳ Loading openai-whisper model: {ASR_MODEL_NAME} on {device}")
+        print("ℹ️ If this is the first time this model is used here, it may need to download files and can take a while.")
+        _ow_model = owhisp.load_model(ASR_MODEL_NAME, device=device)
+        print("✅ openai-whisper model loaded.")
     return _ow_model
 
 def _write_temp_wav(sr, y) -> str: #Utility: Normalizes to mono float32, writes an on-disk WAV, and returns its path
@@ -77,19 +111,41 @@ def _normalize_audio_to_wav(audio) -> str:
     # 3) Dict style: {"sample_rate": ..., "data": ...}
     if isinstance(audio, dict):
         # Gradio commonly uses 'sample_rate' + 'data'
-        sr = (audio.get("sample_rate")
-              or audio.get("sr")
-              or audio.get("sampling_rate")
-              or audio.get("sampleRate"))
-        y = (audio.get("data")
-             or audio.get("array")
-             or audio.get("samples"))
+        sr = None
+        for key in ("sample_rate", "sr", "sampling_rate", "sampleRate"):
+            if key in audio and audio.get(key) is not None:
+                sr = audio.get(key)
+                break
+        y = None
+        for key in ("data", "array", "samples"):
+            if key in audio and audio.get(key) is not None:
+                y = audio.get(key)
+                break
         if sr is None or y is None:
             raise ValueError("Missing 'sample_rate' or 'data' in audio dict.")
         return _write_temp_wav(int(sr), np.asarray(y))
 
     # 4) Unknown
     raise ValueError(f"Unsupported audio input type: {type(audio)}")
+
+def transcribe_reference_audio(path: str, language_code: str | None = None):
+    """Structured helper for internal reuse (e.g., Qwen clone transcript generation)."""
+    s = get_settings()
+    model = get_fw_model()
+    segments, info = model.transcribe(
+        path,
+        language=language_code,
+        beam_size=max(1, int(getattr(s, "whisper_beam_size", 5))),
+        vad_filter=True,
+        condition_on_previous_text=bool(s.whisper_condition_on_prev),
+        temperature=float(s.whisper_temperature),
+    )
+    text = "".join([(seg.text or "") for seg in segments]).strip()
+    return {
+        "text": text,
+        "language": getattr(info, "language", language_code or ""),
+        "language_probability": float(getattr(info, "language_probability", 0.0) or 0.0),
+    }
 
 def _transcribe_path(path: str, lang_code, beam_size, use_vad, backend_display):
     s = get_settings()  # current global defaults
@@ -99,7 +155,7 @@ def _transcribe_path(path: str, lang_code, beam_size, use_vad, backend_display):
         result = model.transcribe(
             path,
             language=lang_code,
-            fp16=True,
+            fp16=(_ow_device() == "cuda"),
             beam_size=int(beam_size) if beam_size else None,
             temperature=float(s.whisper_temperature),   # <-- use global default
         )
@@ -208,7 +264,7 @@ def transcribe(audio, language_display, beam_size, use_vad, backend_display): #H
             result = model.transcribe( #Inference 
             wav_path,
             language=lang,
-            fp16=True,
+            fp16=(_ow_device() == "cuda"),
             beam_size=int(beam_size) if beam_size else None,
             temperature=float(s.whisper_temperature),
             #top_p=float(s.whisper_top_p), #Some Whisper builds supports it
@@ -286,8 +342,18 @@ def _unpack_chunk(audio):
     if isinstance(audio, (tuple, list)) and len(audio) >= 2:
         sr, y = int(audio[0]), np.asarray(audio[1])
     elif isinstance(audio, dict):
-        sr = int(audio.get("sample_rate") or audio.get("sr") or audio.get("sampling_rate") or audio.get("sampleRate"))
-        y = np.asarray(audio.get("data") or audio.get("array") or audio.get("samples"))
+        sr = None
+        for key in ("sample_rate", "sr", "sampling_rate", "sampleRate"):
+            if key in audio and audio.get(key) is not None:
+                sr = int(audio.get(key))
+                break
+        y = None
+        for key in ("data", "array", "samples"):
+            if key in audio and audio.get(key) is not None:
+                y = np.asarray(audio.get(key))
+                break
+        if sr is None or y is None:
+            raise ValueError("Unsupported streaming chunk dict: missing sample rate or audio data.")
     else:
         raise ValueError(f"Unsupported streaming chunk type: {type(audio)}")
 

@@ -8,9 +8,13 @@ _LEGACY_FILE = _LEGACY_DIR / "config.json"
 def _prefs_dir() -> Path:
     """
     Precedence:
-      1) VOICEHUB_PREFS_DIR  (set in app.py → <app>/preferences)
+      1) VOICEHUB_PREFS_DIR  (explicit override)
       2) VOICEHUB_HOME       (older env; if someone used it)
-      3) CWD/preferences      (safe fallback)
+      3) ~/.voicehub/preferences (default user-profile location)
+
+    The default intentionally lives outside the app directory so a shipped zip
+    does not behave like an existing user config and upgrades do not overwrite
+    preferences in-place.
     """
     if os.getenv("VOICEHUB_PREFS_DIR"):
         base = Path(os.getenv("VOICEHUB_PREFS_DIR")).expanduser().resolve()
@@ -18,7 +22,7 @@ def _prefs_dir() -> Path:
         base = Path(os.getenv("VOICEHUB_HOME")).expanduser().resolve()
         base = base if base.name == "preferences" else (base / "preferences")
     else:
-        base = (Path.cwd() / "preferences").resolve()
+        base = (Path.home() / ".voicehub" / "preferences").resolve()
 
     base.mkdir(parents=True, exist_ok=True)
     return base
@@ -69,3 +73,12 @@ def set_pref(key: str, value) -> bool:
         prefs[key] = value
     save_prefs(prefs)
     return True
+
+
+def prefs_path() -> Path:
+    return _prefs_path()
+
+
+def prefs_exist() -> bool:
+    _migrate_legacy_once()
+    return _prefs_path().exists()

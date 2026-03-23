@@ -16,7 +16,7 @@ def build_debug_tab():
             dbg_text = gr.Textbox(label="Raw text", lines=8, placeholder="Paste your TTS text here…")
             with gr.Column():
                 s = get_settings()
-                dbg_max = gr.Slider(120, 400, value=s.xtts_max_chars_per_chunk, step=5, label="Chunk size cap / threshold (for both stages)")
+                dbg_max = gr.Slider(120, 2048, value=(s.qwen_max_chars_per_chunk if s.tts_default_family == "Qwen" else s.xtts_max_chars_per_chunk), step=5, label="Chunk size cap / threshold (for both stages)")
                 dbg_use_ollama = gr.Checkbox(value=OLLAMA_ENABLE_DEFAULT, label="Use Ollama pre-chunker")
                 dbg_model = gr.Textbox(value=OLLAMA_MODEL_DEFAULT, label="Ollama model", placeholder="llama3.1")
                 test_btn = gr.Button("Test Ollama")
@@ -33,7 +33,7 @@ def build_debug_tab():
 
         # Outputs: refined text (copyable), sentence table, chunk table, summary
         with gr.Row():
-            refined_box = gr.Textbox(label="Refined text (from Ollama, if enabled)", lines=8, show_copy_button=True)
+            refined_box = gr.Textbox(label="Refined text (from Ollama, if enabled)", lines=8)
         with gr.Row():
             dbg_sent = gr.Dataframe(
                 headers=["# (sentence)", "chars", "text"],

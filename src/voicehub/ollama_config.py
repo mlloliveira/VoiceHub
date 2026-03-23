@@ -1,69 +1,44 @@
 # src/voicehub/ollama_config.py
-# ---- Ollama (optional) configuration ----
-# Keep all Ollama-related knobs isolated here so regular code stays clean.
-
 import os
 from .prefs import get_pref, set_pref
 
-# Public fallback you chose:
 _PUBLIC_FALLBACK = "gemma3:12b"
-
-# Accept both env names for convenience
 _env_model = os.getenv("OLLAMA_MODEL") or os.getenv("OLLAMA_MODEL_DEFAULT")
 
-# Enable/disable by default; user can override in UI "Advanced" or via env in run.bat/run.sh
 OLLAMA_ENABLE_DEFAULT = os.getenv("OLLAMA_ENABLE", "0") == "1"
-#OLLAMA_MODEL_DEFAULT  = os.getenv("OLLAMA_MODEL", "gemma3:12b") 
-OLLAMA_MODEL_DEFAULT  = get_pref("ollama_model_default", _env_model or _PUBLIC_FALLBACK) # Precedence: saved pref -> env -> fallback
-OLLAMA_HOST           = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434") 
-OLLAMA_TIMEOUT        = int(os.getenv("OLLAMA_TIMEOUT", "30"))  # seconds
-OLLAMA_MAX_SEG_CHARS  = int(os.getenv("OLLAMA_MAX_SEG_CHARS", "200"))  # follows your rule 2
+OLLAMA_MODEL_DEFAULT = get_pref("ollama_model_default", _env_model or _PUBLIC_FALLBACK)
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "30"))
+OLLAMA_MAX_SEG_CHARS = int(os.getenv("OLLAMA_MAX_SEG_CHARS", "200"))
 
-# Prompt template (your rules verbatim; {max_chars} is injected)
-OLLAMA_PRECHUNK_PROMPT = """You will receive a piece of text that will be spoken by a TTS system. Follow these rules exactly:
+OLLAMA_PRECHUNK_PROMPT_XTTS = """You will receive a piece of text that will be spoken by XTTS, which is sensitive to long or poorly punctuated segments. Follow these rules exactly:
 
 1. Replace emojis with words.
-   Example: 🤗 → "hugging face", 😂 → "laughing face".
-
 2. Split the text into segments of {max_chars} characters or less.
-   Count spaces and punctuation as characters.
-   Each segment must end with proper punctuation.
-
-3. Break long sentences into smaller ones.
-   Use period (.), question mark (?) or exclamation mark (!) as the main break points.
-   Do not use commas as a break. If a comma makes a sentence too long, change it to a period.
-   Example:
-   Input: "I was walking down the street, it was raining, I forgot my umbrella"
-   Output: "I was walking down the street. It was raining. I forgot my umbrella."
-
-4. If there is no good punctuation, create one.
-   Example: Hey cutie, actually I was thinking... → Hey cutie! Actually, I was thinking...
-
-5. Keep the text meaning the same. Do not change words. Only fix punctuation and break into chunks.
-
-6. Output format:
-   Each segment on a new line.
-   Do not number the segments. Just plain text lines.
-   Try to keep connecting words such as And and But.
-   Do not separate senteces linked with That 
-
-Full example:
-Input text: Hey 🤗 I just wanted to let you know that I’m going to be late to the meeting today because traffic is crazy and I left home more than an hour ago and I’m still stuck on the highway and it doesn’t look like that it’s going to clear up soon, I’m so sorry about this but i will try my best
-Output text:
-Hey hugging face!
-I just wanted to let you know that I’m going to be late to the meeting today.
-Traffic is crazy.
-And I left home more than an hour ago and I’m still stuck on the highway.
-It doesn’t look like that it’s going to clear up soon.
-I’m so sorry about this.
-But i will try my best.
-
-----
-Now it's your turn! Do not change the language. Follow the instructions. Follow the text. Follow the examples.
+3. Each segment must end with proper punctuation.
+4. Prefer sentence boundaries. If a long sentence must be split, create a natural sentence boundary with a period.
+5. Keep the original wording and order. Do not paraphrase, summarize, or reorder.
+6. Output one segment per line, with no numbering and no commentary.
+7. Preserve connecting words like And / But when they help the flow.
+8. Remove weird non-text artifacts and read-safe punctuation problems only.
 
 Input text:
 """
 
+OLLAMA_PRECHUNK_PROMPT_QWEN = """You will receive a piece of text that will be spoken by Qwen-TTS, which handles longer chunks better than XTTS. Your goal is to preserve paragraph flow while still making safe speaking segments.
+
+Rules:
+1. Replace emojis with words.
+2. Clean weird non-text artifacts, broken symbols, and obvious OCR-like garbage.
+3. Prefer keeping sentences together and preserve paragraph flow.
+4. Only split when needed for a natural speaking pause or when a segment would become too long.
+5. Aim for segments of {max_chars} characters or less, but prioritize natural paragraph rhythm over aggressive punctuation splitting.
+6. Keep the original wording and order. Do not paraphrase, summarize, or reorder.
+7. Output one segment per line, with no numbering and no commentary.
+8. Choose safe semantic break points, not every punctuation mark.
+
+Input text:
+"""
 
 OLLAMA_TRANSLATE_PROMPT = """You are a precise translation engine.
 

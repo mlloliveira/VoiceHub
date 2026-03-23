@@ -1,46 +1,29 @@
 # src/voicehub/lang_detect.py
-# Lightweight, XTTS-focused language detection utilities.
-# Uses langid (pure-Python) and restricts detection to languages present in _LANG_LABELS.
-
 from __future__ import annotations
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
-# Source of truth for supported languages & display labels
-from .config import _LANG_LABELS as CODE2LABEL  # e.g., {"en":"English", "pt":"Português", ..., "zh-cn":"中文 (简体)"}
+from .config import _LANG_LABELS as CODE2LABEL
 
-SUPPORTED_XTTS_CODES = list(CODE2LABEL.keys())  # e.g., ["en", "es", ..., "zh-cn", ...]
-# langid expects "zh", not "zh-cn"
+SUPPORTED_XTTS_CODES = list(CODE2LABEL.keys())
 LANGID_CODES = [("zh" if c == "zh-cn" else c) for c in SUPPORTED_XTTS_CODES]
-
-# Map langid -> XTTS (identity for most; special-case Chinese)
 DETECT2XTTS = {c: c for c in LANGID_CODES}
-DETECT2XTTS["zh"] = "zh-cn"  # normalize to XTTS code
+DETECT2XTTS["zh"] = "zh-cn"
 
 LANGID_AVAILABLE = True
 IDENTIFIER = None
-# try:
-#     import langid
-#     IDENTIFIER = langid.LanguageIdentifier.from_modelstring(langid.model, norm_probs=True)
-#     print(IDENTIFIER)
-#     # Restrict detector to exactly the languages we support
-#     try:
-#         IDENTIFIER.set_languages(LANGID_CODES)
-#     except Exception:
-#         pass
-# except Exception:
-#     LANGID_AVAILABLE = False
-#     IDENTIFIER = None
-
-import langid
-IDENTIFIER = langid.langid.LanguageIdentifier.from_modelstring(langid.langid.model, norm_probs=True)
+try:
+    import langid
+    IDENTIFIER = langid.langid.LanguageIdentifier.from_modelstring(langid.langid.model, norm_probs=True)
+    try:
+        IDENTIFIER.set_languages(LANGID_CODES)
+    except Exception:
+        pass
+except Exception:
+    LANGID_AVAILABLE = False
+    IDENTIFIER = None
 
 
 def detect_tts_language(text: str, min_conf: float = 0.80) -> Tuple[Optional[str], Optional[str], float, str]:
-    """
-    Detect language of 'text' limited to the languages present in CODE2LABEL.
-    Returns:
-      (display_label, xtts_code, confidence[0,1], note_markdown)
-    """
     txt = (text or "").strip()
     if not txt:
         return None, None, 0.0, "⚠️ Empty text."
@@ -48,7 +31,7 @@ def detect_tts_language(text: str, min_conf: float = 0.80) -> Tuple[Optional[str
         return None, None, 0.0, "⚠️ Language detector not installed."
 
     try:
-        code_raw, score = IDENTIFIER.classify(txt)   # score is normalized 0..1. Lang is 'es', 'en', 'zh', ...
+        code_raw, score = IDENTIFIER.classify(txt)
     except Exception as e:
         return None, None, 0.0, f"⚠️ Detection failed: {e}"
 
@@ -64,12 +47,7 @@ def detect_tts_language(text: str, min_conf: float = 0.80) -> Tuple[Optional[str
 
 
 def detect_tts_language_display(text: str) -> Tuple[str, str]:
-    """
-    UI helper: returns (dropdown_value, note_markdown).
-    Falls back to 'English' if detection fails.
-    """
     label, code, score, note = detect_tts_language(text)
     if not code:
         return "English", note
-    # Return the display label used in your dropdown
     return CODE2LABEL.get(code, "English"), note
